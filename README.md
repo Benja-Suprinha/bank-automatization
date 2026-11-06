@@ -39,6 +39,48 @@ Set-Location backend
 uvicorn app.main:app --reload --access-log --log-level info
 ```
 
+### macOS
+
+Desde la raíz del repositorio, instala Python 3.12 o posterior y Node.js. Después crea y activa el entorno virtual:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r backend/requirements.txt
+cp backend/.env.example backend/.env
+nano backend/.env
+```
+
+En `backend/.env`, define al menos:
+
+```env
+API_KEY=mi-clave-local
+DATABASE_URL=sqlite:///./data/app.db
+LOG_LEVEL=INFO
+LOG_FILE=data/api.log
+```
+
+Arranca el backend desde su carpeta:
+
+```bash
+cd backend
+../.venv/bin/python -m uvicorn app.main:app \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --reload \
+  --access-log \
+  --log-level info
+```
+
+En otra terminal, puedes comprobarlo con:
+
+```bash
+curl -i http://127.0.0.1:8000/healthz
+tail -f data/api.log
+```
+
+Para detener el servidor, presiona `Control+C`. Si el puerto queda ocupado, encuentra el proceso con `lsof -nP -iTCP:8000 -sTCP:LISTEN` y detenlo con `kill <PID>`.
+
 La API queda disponible en `http://127.0.0.1:8000`. Health check:
 
 ```powershell
@@ -87,14 +129,25 @@ Copy-Item .env.frontend.example .env
 npm run dev
 ```
 
+En macOS:
+
+```bash
+cd frontend
+npm install
+cp .env.frontend.example .env
+npm run dev
+```
+
 Abre `http://127.0.0.1:5173` e introduce la misma API key del backend. El dashboard permite listar, filtrar, crear, editar, borrar y exportar transacciones.
 
 Opcionalmente, `frontend/.env` puede contener:
 
 ```env
-VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_API_BASE_URL=https://gastos.supralinks.cl
 VITE_API_KEY=mi-clave-local
 ```
+
+El frontend apunta por defecto a `https://gastos.supralinks.cl`. Puedes sobrescribirlo con `VITE_API_BASE_URL` si estás ejecutando el backend localmente.
 
 Build de producción:
 
