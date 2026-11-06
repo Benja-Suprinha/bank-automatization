@@ -26,13 +26,17 @@ Configura `backend/.env`:
 ```env
 API_KEY=mi-clave-local
 DATABASE_URL=sqlite:///./data/app.db
+LOG_LEVEL=INFO
+LOG_FILE=data/api.log
 ```
+
+El backend registra solicitudes con método, ruta, estado y duración; también registra eventos de parsing, duplicados y operaciones CRUD. Los logs se muestran en la terminal y se guardan en `backend/data/api.log`. No registra el body completo de las notificaciones ni la API key. Puedes usar `LOG_LEVEL=DEBUG`, `INFO`, `WARNING` o `ERROR`.
 
 Inicia la API desde `backend/` para que SQLite se cree en `backend/data/app.db`:
 
 ```powershell
 Set-Location backend
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --access-log --log-level info
 ```
 
 La API queda disponible en `http://127.0.0.1:8000`. Health check:

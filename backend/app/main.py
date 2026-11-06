@@ -1,6 +1,8 @@
 import csv
 import io
+import logging
 import os
+import time
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
@@ -18,6 +20,20 @@ from .parsers.cencosud import ParseError
 from .schemas import NotificationCreate, NotificationOut, TransactionCreate, TransactionOut, TransactionPatch
 
 load_dotenv()
+log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+log_file = os.getenv("LOG_FILE", "data/api.log")
+os.makedirs(os.path.dirname(log_file) or ".", exist_ok=True)
+log_formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+logger = logging.getLogger("bank_automatization.api")
+logger.setLevel(log_level)
+logger.propagate = False
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_formatter)
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setFormatter(log_formatter)
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
 app = FastAPI(title="Personal Bank Automatization API", version="1.0.0")
 MAX_BODY_SIZE = 10 * 1024
 allowed_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if origin.strip()]
@@ -28,22 +44,35 @@ app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_methods=
 def create_tables() -> None:
     os.makedirs("data", exist_ok=True)
     Base.metadata.create_all(bind=engine)
+    logger.info("database.ready path=%s", os.getenv("DATABASE_URL", "sqlite:///./data/app.db"))
 
 
 @app.middleware("http")
 async def limit_request_body(request: Request, call_next):
+    started_at = time.perf_counter()
+    logger.info("request.started method=%s path=%s", request.method, request.url.path)
     body = await request.body()
     if len(body) > MAX_BODY_SIZE:
+        logger.warning("request.rejected method=%s path=%s reason=body_too_large bytes=%d", request.method, request.url.path, len(body))
         return Response("Request body too large", status_code=413)
     request._receive = lambda: {"type": "http.request", "body": body, "more_body": False}
-    return await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("request.failed method=%s path=%s", request.method, request.url.path)
+        raise
+    duration_ms = (time.perf_counter() - started_at) * 1000
+    logger.info("request.completed method=%s path=%s status=%d duration_ms=%.1f", request.method, request.url.path, response.status_code, duration_ms)
+    return response
 
 
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
     configured_key = os.getenv("API_KEY")
     if not configured_key:
+        logger.error("auth.failed reason=api_key_not_configured")
         raise HTTPException(status_code=500, detail="API_KEY no está configurada")
     if x_api_key != configured_key:
+        logger.warning("auth.failed reason=invalid_api_key")
         raise HTTPException(status_code=401, detail="API key inválida")
 
 
@@ -61,6 +90,7 @@ def create_notification(payload: NotificationCreate, db: Session = Depends(get_d
     if payload.client_event_id:
         existing = db.scalar(select(Notification).options(selectinload(Notification.transaction)).where(Notification.client_event_id == payload.client_event_id))
         if existing:
+            logger.info("notification.duplicate notification_id=%d source=%s", existing.id, existing.source)
             return existing
     notification = Notification(source=payload.source, title=payload.title, body=payload.body, received_at=payload.received_at.isoformat(), client_event_id=payload.client_event_id)
     db.add(notification)
@@ -75,8 +105,11 @@ def create_notification(payload: NotificationCreate, db: Session = Depends(get_d
     except (ParseError, ValueError) as exc:
         notification.status = "unparsed"
         notification.parse_error = str(exc)
+        logger.warning("notification.unparsed notification_id=%d source=%s reason=%s", notification.id, notification.source, str(exc))
     db.commit()
     db.refresh(notification)
+    if notification.transaction:
+        logger.info("notification.parsed notification_id=%d source=%s transaction_id=%d", notification.id, notification.source, notification.transaction.id)
     if notification.status == "unparsed":
         return JSONResponse(status_code=202, content=NotificationOut.model_validate(notification).model_dump(mode="json"))
     return notification
@@ -97,6 +130,7 @@ def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)
     db.add(transaction)
     db.commit()
     db.refresh(transaction)
+    logger.info("transaction.created transaction_id=%d source=%s origin=manual", transaction.id, transaction.source)
     return transaction
 
 
@@ -134,6 +168,7 @@ def reparse_notification(notification_id: int, db: Session = Depends(get_db)):
         notification.parse_error = str(exc)
     db.commit()
     db.refresh(notification)
+    logger.info("notification.reparsed notification_id=%d source=%s status=%s", notification.id, notification.source, notification.status)
     return notification
 
 
@@ -158,6 +193,7 @@ def update_transaction(transaction_id: int, payload: TransactionPatch, db: Sessi
     transaction.updated_at = now_iso()
     db.commit()
     db.refresh(transaction)
+    logger.info("transaction.updated transaction_id=%d fields=%s", transaction.id, ",".join(payload.model_dump(exclude_unset=True).keys()))
     return transaction
 
 
@@ -168,3 +204,4 @@ def delete_transaction(transaction_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Transacción no encontrada")
     db.delete(transaction)
     db.commit()
+    logger.info("transaction.deleted transaction_id=%d", transaction_id)
