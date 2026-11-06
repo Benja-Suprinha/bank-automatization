@@ -1,42 +1,110 @@
-# Bank Automatization API
+# Bank Automatization
 
-Backend personal para recibir notificaciones de compras desde Atajos en iPhone.
+Aplicación personal para registrar y revisar gastos recibidos desde Atajos en iPhone.
 
-## Desarrollo local
+El repositorio está separado en dos aplicaciones:
 
-Requiere Python 3.12 o posterior.
+```text
+backend/    FastAPI, SQLAlchemy, SQLite y pytest
+frontend/   React, TypeScript, Vite y lucide-react
+```
+
+## Backend
+
+Requiere Python 3.12 o posterior. Desde la raíz del repositorio:
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-$env:API_KEY = "replace-with-a-long-random-key"
+.\.venv\Scripts\Activate.ps1
+pip install -r backend\requirements.txt
+Copy-Item backend\.env.example backend\.env
+notepad backend\.env
+```
+
+Configura `backend/.env`:
+
+```env
+API_KEY=mi-clave-local
+DATABASE_URL=sqlite:///./data/app.db
+```
+
+Inicia la API desde `backend/` para que SQLite se cree en `backend/data/app.db`:
+
+```powershell
+Set-Location backend
 uvicorn app.main:app --reload
 ```
 
-La base SQLite se crea en `data/app.db` al iniciar. Se puede configurar `DATABASE_URL`; las tablas se crean automáticamente y SQLite usa `foreign_keys=ON` y `journal_mode=WAL`.
+La API queda disponible en `http://127.0.0.1:8000`. Health check:
 
-## Ejemplo
+```powershell
+curl.exe http://127.0.0.1:8000/healthz
+```
+
+Ejemplo de notificación:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/notifications \
   -H 'Content-Type: application/json' \
-  -H 'X-API-Key: replace-with-a-long-random-key' \
+  -H 'X-API-Key: mi-clave-local' \
   -d '{"source":"cencosud","title":"Aprobamos tu compra","body":"Realizaste una compra por CLP 27,132 en JUMBO ONECLICK el 06/11/26 con tu tarjeta terminada en 2612","received_at":"2026-11-06T09:11:00-03:00","client_event_id":"uuid"}'
 ```
 
-Endpoints adicionales: `GET /healthz`, listado y edición de transacciones, listado de notificaciones filtrable por estado, reintento de parsing y `GET /api/v1/transactions/export.csv`. Todos excepto `GET /healthz` requieren `X-API-Key`.
+Endpoints principales:
+
+- `POST /api/v1/notifications`
+- `GET /api/v1/notifications?status=unparsed`
+- `POST /api/v1/notifications/{id}/reparse`
+- `GET /api/v1/transactions`
+- `POST /api/v1/transactions`
+- `PATCH /api/v1/transactions/{id}`
+- `DELETE /api/v1/transactions/{id}`
+- `GET /api/v1/transactions/export.csv`
+- `GET /healthz`
+
+Todos excepto `/healthz` requieren el header `X-API-Key`.
+
+### Tests del backend
+
+Desde la raíz:
+
+```powershell
+python -m pytest backend\tests -q
+```
+
+## Frontend
+
+Con el backend corriendo, abre otra terminal desde la raíz:
+
+```powershell
+Set-Location frontend
+npm install
+Copy-Item .env.frontend.example .env
+npm run dev
+```
+
+Abre `http://127.0.0.1:5173` e introduce la misma API key del backend. El dashboard permite listar, filtrar, crear, editar, borrar y exportar transacciones.
+
+Opcionalmente, `frontend/.env` puede contener:
+
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_API_KEY=mi-clave-local
+```
+
+Build de producción:
+
+```powershell
+Set-Location frontend
+npm run build
+```
 
 ## Docker
 
-Copia `.env.example` como `.env`, cambia `API_KEY` y ejecuta:
+Configura `backend/.env` y ejecuta desde la raíz:
 
-```bash
+```powershell
 docker compose up --build
 ```
 
-## Pruebas
-
-```bash
-pytest
-```
+La API se expone en `http://127.0.0.1:8000`. La base persistirá en `backend/data`.

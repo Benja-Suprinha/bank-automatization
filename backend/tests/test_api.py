@@ -54,3 +54,22 @@ def test_unparsed_is_saved_and_listed(client):
     listed = client.get("/api/v1/notifications?status=unparsed", headers=headers)
     assert listed.status_code == 200
     assert len(listed.json()) == 1
+
+
+def test_transaction_can_be_created_and_deleted(client):
+    headers = {"X-API-Key": "test-key"}
+    payload = {
+        "source": "manual",
+        "amount": 4500,
+        "merchant": "CAFETERIA TEST",
+        "description": "Prueba de CRUD",
+        "occurred_at": "2026-11-06",
+        "category": "Alimentación",
+    }
+    created = client.post("/api/v1/transactions", json=payload, headers=headers)
+    assert created.status_code == 201
+    transaction_id = created.json()["id"]
+    assert created.json()["amount"] == 4500
+    deleted = client.delete(f"/api/v1/transactions/{transaction_id}", headers=headers)
+    assert deleted.status_code == 204
+    assert client.get("/api/v1/transactions", headers=headers).json() == []

@@ -20,6 +20,18 @@ class TransactionPatch(BaseModel):
     status: str | None = None
 
 
+class TransactionCreate(BaseModel):
+    source: str = Field(min_length=1, max_length=100)
+    amount: int = Field(gt=0)
+    currency: str = Field(default="CLP", min_length=3, max_length=3)
+    merchant: str | None = None
+    description: str | None = None
+    occurred_at: str | None = None
+    card_last4: str | None = Field(default=None, max_length=4)
+    category: str | None = None
+    status: str = "pending_review"
+
+
 class TransactionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
